@@ -1,29 +1,40 @@
-name: Deploy static site to S3 via OIDC
+name: Deploy via OIDC to dev or prod
+
 on:
   push:
     branches: [main, dev]
 
 permissions:
-  id-token: write      # ★ allows OIDC
+  id-token: write
   contents: read
 
 jobs:
   deploy:
+    # Map branch ➜ environment in one line
+    environment: ${{ github.ref_name == 'main' && 'prod' || 'dev' }}
+
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      # 1️⃣  Swap OIDC JWT for STS creds
+      #
+      # 1️⃣ Swap OIDC JWT for STS creds in the
+      #    *account* implied by the environment secret
+      #
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::509904898151:role/gh-oidc-deploy
-          aws-region: us-west-1      # pick your region
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
 
-      # 2️⃣  Prove creds work (great for first test)
-      - run: aws sts get-caller-identity
+      - name: Who am I?
+        run: aws sts get-caller-identity
 
-      # 3️⃣  Real work
-      - name: Sync site to S3
+      #
+      # 2️⃣ Deploy artefacts / run Terraform / CDK, etc.
+      #    (example: sync to S3; switch bucket by env)
+      #
+      - name: Deploy
         run: |
-          aws s3 sync ./public s3://my-site-bucket --delete
+          BUCKET=$([[ "${{ github.ref_name }}" == "main" ]] && echo "take5-prod-site" || echo "take5-dev-site")
+          aws s3 sync ./public "s3://${BUCKET}" --delete
