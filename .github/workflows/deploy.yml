@@ -1,46 +1,42 @@
-name: Deploy via OIDC to dev or prod
+name: Deploy static site to S3 via OIDC
 
 on:
   push:
-    branches: [main, dev]
+    branches: [dev, main]
 
 permissions:
-  id-token: write
-  contents: read
+  id-token: write        # GitHub will issue the OIDC token
+  contents: read         # needed for actions/checkout
+
+env:                     # bucket names & region shared by all jobs
+  AWS_REGION: us-west-1
+  DEV_BUCKET:  take5-dev
+  PROD_BUCKET: take5-prod
 
 jobs:
   deploy:
-    # Map branch ➜ environment in one line
+    # Pick the GitHub environment by branch: main → prod, else dev
     environment: ${{ github.ref_name == 'main' && 'prod' || 'dev' }}
 
     runs-on: ubuntu-latest
+
     steps:
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: us-west-1
+      - name: Check out code
+        uses: actions/checkout@v4
 
-
-      - uses: actions/checkout@v4
-
-      #
-      # 1️⃣ Swap OIDC JWT for STS creds in the
-      #    *account* implied by the environment secret
-      #
-      - name: Configure AWS credentials
+      - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
+          # Environment secret injected automatically based on the line above
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: us-west-1
+          aws-region:     ${{ env.AWS_REGION }}
 
-      - name: Who am I?
-        run: aws sts get-caller-identity
-
-      #
-      # 2️⃣ Deploy artefacts / run Terraform / CDK, etc.
-      #    (example: sync to S3; switch bucket by env)
-      #
-      - name: Deploy
+      - name: Upload index.html to the appropriate S3 bucket
         run: |
-          BUCKET=$([[ "${{ github.ref_name }}" == "main" ]] && echo "take5-prod-site" || echo "take5-dev-site")
-          aws s3 sync ./public "s3://${BUCKET}" --delete
+          if [[ "${{ github.ref_name }}" == "main" ]]; then
+            BUCKET="${{ env.PROD_BUCKET }}"
+          else
+            BUCKET="${{ env.DEV_BUCKET }}"
+          fi
+          echo "Deploying to $BUCKET ..."
+          aws s3 cp ./index.html "s3://${BUCKET}/"
