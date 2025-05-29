@@ -1,42 +1,38 @@
-name: Deploy static site to S3 via OIDC
+# .github/workflows/deploy.yml
+name: Deploy Take5 static site via OIDC
 
 on:
   push:
     branches: [dev, main]
 
 permissions:
-  id-token: write        # GitHub will issue the OIDC token
-  contents: read         # needed for actions/checkout
+  id-token: write
+  contents: read
 
-env:                     # bucket names & region shared by all jobs
-  AWS_REGION: us-west-1
-  DEV_BUCKET:  take5-dev
-  PROD_BUCKET: take5-prod
+env:
+  AWS_REGION: us-east-1
+  DEV_BUCKET:  take5-dev-site
+  PROD_BUCKET: take5-prod-site
 
 jobs:
   deploy:
-    # Pick the GitHub environment by branch: main → prod, else dev
     environment: ${{ github.ref_name == 'main' && 'prod' || 'dev' }}
-
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check out code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          # Environment secret injected automatically based on the line above
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}   # set per-environment
           aws-region:     ${{ env.AWS_REGION }}
 
-      - name: Upload index.html to the appropriate S3 bucket
+      - name: Upload artefact
         run: |
           if [[ "${{ github.ref_name }}" == "main" ]]; then
             BUCKET="${{ env.PROD_BUCKET }}"
           else
             BUCKET="${{ env.DEV_BUCKET }}"
           fi
-          echo "Deploying to $BUCKET ..."
           aws s3 cp ./index.html "s3://${BUCKET}/"
