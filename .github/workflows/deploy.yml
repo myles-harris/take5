@@ -19,6 +19,9 @@ jobs:
     environment: ${{ github.ref_name == 'main' && 'prod' || 'dev' }}
     runs-on: ubuntu-latest
 
+      - echo "Ref name ${{github.ref_name}}"
+      # - echo "secret ${{ secrets.AWS_ROLE_ARN }}"
+
     steps:
       - uses: actions/checkout@v4
 
