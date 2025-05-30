@@ -32,11 +32,11 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}   # set per-environment
           aws-region:     ${{ env.AWS_REGION }}
 
-      - name: Upload artefact
-        run: |
-          if [[ "${{ github.ref_name }}" == "main" ]]; then
-            BUCKET="${{ env.PROD_BUCKET }}"
-          else
-            BUCKET="${{ env.DEV_BUCKET }}"
-          fi
-          aws s3 cp ./index.html "s3://${BUCKET}/"
+      # - name: Upload artefact
+      #   run: |
+      #     if [[ "${{ github.ref_name }}" == "main" ]]; then
+      #       BUCKET="${{ env.PROD_BUCKET }}"
+      #     else
+      #       BUCKET="${{ env.DEV_BUCKET }}"
+      #     fi
+      #     aws s3 cp ./index.html "s3://${BUCKET}/"
