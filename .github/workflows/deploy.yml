@@ -11,8 +11,8 @@ permissions:
 
 env:
   AWS_REGION: us-east-1
-  DEV_BUCKET:  take5-dev-site
-  PROD_BUCKET: take5-prod-site
+  DEV_BUCKET:  take5-dev
+  PROD_BUCKET: take5-prod
 
 jobs:
   deploy:
