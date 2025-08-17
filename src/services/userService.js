@@ -5,48 +5,35 @@ const { getElement, getIndex } = require('../utils/helpers/helpers')
 
 function getUser(id) {
     const user = validateGetUser(id)
-    // console.log(user.error)
-    // console.log(user.value)
     return user
-    // if (user.error) {
-    //     return user.error
-    // } else {
-    //     return user.value
-    // }
 }
 
 function createUser(data) {
     const user = validatePostUser(data)
-    if (user.error) {
-        return user.error
-    } else {
+    if (user.value) {
         users.push(user.value)
-        return user.value
     }
+    return user
 }
 
 function updateUser(id, data) {
     let user = getUser(id);
-    if (user.error) {
-        return user.error
-    } else {
+    if (user.value) {
         user = validateUpdateUser(data)
-        if (user.error) {
-            return user.error
-        } else {
+        if (user.value) {
             Object.assign(users[id], data)
             return users[id]
         }
     }
+    return user
 }
 
 function deleteUser(id) {
     const user = validateGetUser(id)
-    if (user.error) {
-        return user.error
-    } else {
+    if (user.value) {
         return users.splice(getIndex(id, users), 1)
     }
+    return user
 }
 
 exports.getUser = getUser;

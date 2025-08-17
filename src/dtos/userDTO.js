@@ -5,7 +5,7 @@ class userDTO {
     countryCode;    // int
     phoneNumber;    // int
     // values assigned upon user verification
-    id = -1;             // str
+    id = '-1';             // str
     // user assigned values
     groups = [];         // list<groupDTO>
 

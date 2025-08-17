@@ -18,8 +18,8 @@ app.get('/user/:id', (req, res, next) => {
         console.log(`ERROR getting single user: `, foundUser.error);
         res.status(404).send(foundUser.error)
     } else {
-        console.log(`GETTING single user: `, foundUser.value);
-        res.status(200).send(foundUser.value)
+        console.log(`GETTING single user: `, foundUser);
+        res.status(200).send(foundUser)
     }
 })
 

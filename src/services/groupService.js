@@ -4,45 +4,35 @@ const { getElement, getIndex } = require('../utils/helpers/helpers')
 
 function getGroup(id) {
     const group = validateGetGroup(id)
-    if (group.error) {
-        return group.error
-    } else {
-        return group.value
-    }
+    return group
 }
 
 function createGroup(data) {
     const group = validatePostGroup(data)
-    if (group.error) {
-        return group.error
-    } else {
+    if (group.value) {
         groups.push(group.value)
-        return group.value
     }
+    return group
 }
 
 function updateGroup(id, data) {
     let group = getGroup(id);
-    if (group.error) {
-        return group.error
-    } else {
+    if (group.value) {
         group = validateUpdateGroup(data)
-        if (group.error) {
-            return group.error
-        } else {
+        if (group.value) {
             Object.assign(groups[id], data)
             return groups[id]
         }
     }
+    return group
 }
 
 function deleteGroup(id) {
     const group = validateGetGroup(id)
-    if (group.error) {
-        return group.error
-    } else {
+    if (group.value) {
         return groups.splice(getIndex(id, groups), 1)
     }
+    return group
 }
 
 exports.getGroup = getGroup;

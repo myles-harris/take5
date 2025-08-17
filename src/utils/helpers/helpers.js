@@ -6,5 +6,4 @@ function getIndex(id, data) {
     return data.findIndex(obj => obj.id === id);
 }
 
-module.exports = { getElement };
-module.exports = { getIndex };
+module.exports = { getElement, getIndex };

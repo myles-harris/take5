@@ -35,7 +35,6 @@ const groupUpdateSchema = Joi.object({
 
 const validateGetUser = id => {
     const foundUser = getElement(id, users);
-    console.log(foundUser)
     if (foundUser) {
         return foundUser
     } else {
