@@ -5,8 +5,6 @@ const { getElement, getIndex } = require('../utils/helpers/helpers')
 const { getUser, createUser, updateUser, deleteUser } = require('../services/userService');
 const { users } = require('../db/fakeUsers')
 
-app.use(express.json());
-
 app.get('/user', (req, res, next) => {
     console.log(`GETTING all users: `, users);
     res.send(users)
@@ -26,6 +24,7 @@ app.get('/user/:id', (req, res, next) => {
 app.post('/user', (req, res, next) => {
     const newUser = createUser(req.body)
     if (newUser.error) {
+        console.log(`ERROR POSTING new user: `, newUser.error);
         res.status(400).send(newUser.error)
     } else {
         console.log(`POSTING new user: `, users);
@@ -39,6 +38,7 @@ app.put('/user/:id', (req, res, next) => {
         console.log(`PATCHING user: `, users);
         res.status(404).send(updatedUser.error)
     } else {
+        console.log(`PATCHING user: `, users);
         res.status(200).send(updatedUser.value)
     }
 })
@@ -46,6 +46,7 @@ app.put('/user/:id', (req, res, next) => {
 app.delete('/user/:id', (req, res, next) => {
     const deletedUser = deleteUser(req.params.id)
     if (deletedUser.error) {
+        console.log(`ERROR DELETING user: `, deletedUser.error);
         res.status(404).send(deletedUser.error)
     } else {
         console.log(`DELETING user`);

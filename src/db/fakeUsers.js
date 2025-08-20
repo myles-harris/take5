@@ -1,31 +1,37 @@
+const { Timezone } = require('../utils/constants/timezone');
+
 let users = [
     {
-        id: '11',
+        id: 1,
         givenName: 'myles',
         familyName: 'harris',
-        countryCode: '1',
-        phoneNumber: '1111111111'
+        phoneNumber: '1111111111',
+        timezone: Timezone.EST,
+        groups: []
     },
     {
-        id: '12',
+        id: 2,
         givenName: 'john',
         familyName: 'doe',
-        countryCode: '1',
-        phoneNumber: '2222222222'
+        phoneNumber: '2222222222',
+        timezone: Timezone.PST,
+        groups: []
     },
     {
-        id: '13',
+        id: 3,
         givenName: 'huey',
         familyName: 'freeman',
-        countryCode: '1',
-        phoneNumber: '3333333333'
+        phoneNumber: '3333333333',
+        timezone: Timezone.CST,
+        groups: []
     },
     {
-        id: '14',
+        id: 4,
         givenName: 'riley',
         familyName: 'freeman',
-        countryCode: '1',
-        phoneNumber: '4444444444'
+        phoneNumber: '4444444444',
+        timezone: Timezone.MST,
+        groups: []
     }
 ]
 

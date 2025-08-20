@@ -1,5 +1,7 @@
 let { users } = require('../../db/fakeUsers');
 let { groups } = require('../../db/fakeGroups');
+const { Timezone } = require('../constants/timezone');
+const { Cadence } = require('../constants/cadenceType');
 
 const Joi = require('joi');
 const { getElement } = require('./helpers');
@@ -9,28 +11,34 @@ const validator = (schema) => (payload) => schema.validate(payload, { abortEarly
 const userPostSchema = Joi.object({
     givenName:      Joi.string().alphanum().min(1).max(30).required(),
     familyName:     Joi.string().alphanum().min(1).max(30).required(),
-    countryCode:    Joi.number().min(1).max(999).required(),
-    phoneNumber:    Joi.string().length(10).pattern(/^[0-9]+$/).required()
+    phoneNumber:    Joi.string().length(10).pattern(/^[0-9]+$/).required(),
+    timezone:       Joi.string().valid(...Object.values(Timezone)).default(Timezone.UTC)
 });
 
 const userUpdateSchema = Joi.object({
     givenName:      Joi.string().alphanum().min(1).max(30),
     familyName:     Joi.string().alphanum().min(1).max(30),
-    countryCode:    Joi.number().min(1).max(999),
     phoneNumber:    Joi.string().length(10).pattern(/^[0-9]+$/),
-    groups:         Joi.array().items(Joi.string())
+    timezone:       Joi.string().valid(...Object.values(Timezone)),
+    groups:         Joi.array().items(Joi.number())
 });
 
 const groupPostSchema = Joi.object({
-    users:          Joi.array().items(Joi.string()).required(),
-    cadence:        Joi.string().required(),
-    frequency:      Joi.number().min(1).max(14).required()
+    name:           Joi.string().min(1).max(50).required(),
+    users:          Joi.array().items(Joi.number()).required(),
+    cadence:        Joi.string().valid(...Object.values(Cadence)).required(),
+    frequency:      Joi.number().min(1).max(14).required(),
+    duration:       Joi.number().min(1).max(60).required(), // 1-60 minutes
+    enabled:        Joi.boolean().default(true)
 });
 
 const groupUpdateSchema = Joi.object({
-    users:          Joi.array().items(Joi.string()),
-    cadence:        Joi.string(),
-    frequency:      Joi.number().min(1).max(14)
+    name:           Joi.string().min(1).max(50),
+    users:          Joi.array().items(Joi.number()),
+    cadence:        Joi.string().valid(...Object.values(Cadence)),
+    frequency:      Joi.number().min(1).max(14),
+    duration:       Joi.number().min(1).max(60), // 1-60 minutes
+    enabled:        Joi.boolean()
 });
 
 const validateGetUser = id => {

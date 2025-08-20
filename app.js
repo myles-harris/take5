@@ -1,19 +1,19 @@
 const express = require('express');
-const app = require('./src/api/user')
+const app = express();
+const userRoutes = require('./src/api/user');
+const groupRoutes = require('./src/api/group');
+
+app.use(express.json());
+
+// Mount API routes
+app.use('/api', userRoutes);
+app.use('/api', groupRoutes);
 
 app.get('/', (req, res) => {
-  res.send('<h1>Hello from your Express.js server!!</h1>');
+  res.send('<h1>Hello from your Take5 Express.js server!!</h1>');
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`API listening at http://localhost:${PORT}`);
-})
-  
-// app.get('/', (req, res) => {
-//   res.send('<h1>Hello from your Express.js server!!</h1>');
-// });
-  
-// app.listen(8000, () => {
-//   console.log('Server listening on port 8000');
-// });
+    console.log(`Take5 API listening at http://localhost:${PORT}`);
+});

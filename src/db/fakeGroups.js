@@ -1,19 +1,25 @@
+const { Cadence } = require('../utils/constants/cadenceType');
+
 let groups = [
     {
-        id: 21,
-        name: "firstGroup",
-        members: [11, 13],
-        cadence: "daily",
+        id: 1,
+        name: "First Group",
+        users: [1, 3], // References to user IDs
+        cadence: Cadence.DAILY,
         frequency: 1,
-        callDuration: 5 //minutes
+        duration: 5, // minutes
+        enabled: true,
+        rollCall: {}
     },
     {
-        id: 22,
-        name: "secondGroup",
-        members: [12, 14],
-        cadence: "weekly",
+        id: 2,
+        name: "Second Group",
+        users: [2, 4], // References to user IDs
+        cadence: Cadence.WEEKLY,
         frequency: 2,
-        callDuration: 10 //minutes
+        duration: 10, // minutes
+        enabled: true,
+        rollCall: {}
     }
 ]
 

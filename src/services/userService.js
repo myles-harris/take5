@@ -1,7 +1,7 @@
 const { users } = require('../db/fakeUsers')
 const { validatePostUser, validateGetUser, validateUpdateUser } = require('../utils/helpers/validators')
-const { validatePostGroup, validateGetGroup, validateUpdateGroup } = require('../utils/helpers/validators')
 const { getElement, getIndex } = require('../utils/helpers/helpers')
+const { UserDTO } = require('../dtos/userDTO')
 
 function getUser(id) {
     const user = validateGetUser(id)
@@ -9,31 +9,53 @@ function getUser(id) {
 }
 
 function createUser(data) {
-    const user = validatePostUser(data)
-    if (user.value) {
-        users.push(user.value)
+    const validation = validatePostUser(data)
+    if (validation.error) {
+        return { error: validation.error.details[0].message }
     }
-    return user
+    
+    // Generate new ID (in a real app, this would be handled by the database)
+    const newId = Math.max(...users.map(u => u.id), 0) + 1
+    
+    const userData = {
+        ...validation.value,
+        id: newId,
+        groups: []
+    }
+    
+    const newUser = new UserDTO(userData)
+    users.push(newUser)
+    return { value: newUser }
 }
 
 function updateUser(id, data) {
     let user = getUser(id);
-    if (user.value) {
-        user = validateUpdateUser(data)
-        if (user.value) {
-            Object.assign(users[id], data)
-            return users[id]
-        }
+    if (user.error) {
+        return user
     }
-    return user
+    
+    const validation = validateUpdateUser(data)
+    if (validation.error) {
+        return { error: validation.error.details[0].message }
+    }
+    
+    // Update the user with new data
+    Object.assign(user, validation.value)
+    return { value: user }
 }
 
 function deleteUser(id) {
     const user = validateGetUser(id)
-    if (user.value) {
-        return users.splice(getIndex(id, users), 1)
+    if (user.error) {
+        return user
     }
-    return user
+    
+    const index = getIndex(id, users)
+    if (index !== -1) {
+        users.splice(index, 1)
+        return { value: user }
+    }
+    return { error: "User not found." }
 }
 
 exports.getUser = getUser;

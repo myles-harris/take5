@@ -3,3 +3,5 @@ const Cadence = Object.freeze({
     WEEKLY: 'weekly',
     MONTHLY: 'monthly'
 });
+
+module.exports = { Cadence };
