@@ -1,10 +1,7 @@
-let { users } = require('../../db/fakeUsers');
-let { groups } = require('../../db/fakeGroups');
 const { Timezone } = require('../constants/timezone');
 const { Cadence } = require('../constants/cadenceType');
 
 const Joi = require('joi');
-const { getElement } = require('./helpers');
 
 const validator = (schema) => (payload) => schema.validate(payload, { abortEarly: false });
 
@@ -41,22 +38,21 @@ const groupUpdateSchema = Joi.object({
     enabled:        Joi.boolean()
 });
 
-const validateGetUser = id => {
-    const foundUser = getElement(id, users);
-    if (foundUser) {
-        return foundUser
-    } else {
-        return { error: "User not found." }
+// Simple validation functions - database lookups will be handled by repositories
+const validateGetUser = (id) => {
+    const numId = parseInt(id);
+    if (isNaN(numId) || numId <= 0) {
+        return { error: "Invalid user ID." };
     }
+    return { value: numId };
 }
 
-const validateGetGroup = id => {
-    const foundGroup = getElement(id, groups);
-    if (foundGroup) {
-        return foundGroup
-    } else {
-        return { error: "Group not found." }
+const validateGetGroup = (id) => {
+    const numId = parseInt(id);
+    if (isNaN(numId) || numId <= 0) {
+        return { error: "Invalid group ID." };
     }
+    return { value: numId };
 }
 
 exports.validatePostUser = validator(userPostSchema);

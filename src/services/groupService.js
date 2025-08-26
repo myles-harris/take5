@@ -1,64 +1,131 @@
-const { groups } = require('../db/fakeGroups')
 const { validatePostGroup, validateGetGroup, validateUpdateGroup } = require('../utils/helpers/validators')
-const { getElement, getIndex } = require('../utils/helpers/helpers')
-const { GroupDTO } = require('../dtos/groupDTO')
+const { GroupRepository } = require('../db/groupRepository')
 
-function getGroup(id) {
-    const group = validateGetGroup(id)
-    return group
+const groupRepository = new GroupRepository();
+
+async function getGroup(id) {
+    try {
+        const validation = validateGetGroup(id);
+        if (validation.error) {
+            return { error: validation.error };
+        }
+        
+        const group = await groupRepository.findById(validation.value);
+        if (!group) {
+            return { error: "Group not found." };
+        }
+        return { value: group };
+    } catch (error) {
+        console.error('Error getting group:', error);
+        return { error: "Database error occurred." };
+    }
 }
 
-function createGroup(data) {
-    const validation = validatePostGroup(data)
-    if (validation.error) {
-        return { error: validation.error.details[0].message }
+async function createGroup(data) {
+    try {
+        const validation = validatePostGroup(data);
+        if (validation.error) {
+            return { error: validation.error.details[0].message };
+        }
+        
+        const newGroup = await groupRepository.create(validation.value);
+        return { value: newGroup };
+    } catch (error) {
+        console.error('Error creating group:', error);
+        return { error: "Database error occurred." };
     }
-    
-    // Generate new ID (in a real app, this would be handled by the database)
-    const newId = Math.max(...groups.map(g => g.id), 0) + 1
-    
-    const groupData = {
-        ...validation.value,
-        id: newId,
-        rollCall: {}
-    }
-    
-    const newGroup = new GroupDTO(groupData)
-    groups.push(newGroup)
-    return { value: newGroup }
 }
 
-function updateGroup(id, data) {
-    let group = getGroup(id);
-    if (group.error) {
-        return group
+async function updateGroup(id, data) {
+    try {
+        const idValidation = validateGetGroup(id);
+        if (idValidation.error) {
+            return { error: idValidation.error };
+        }
+        
+        let group = await getGroup(id);
+        if (group.error) {
+            return group;
+        }
+        
+        const validation = validateUpdateGroup(data);
+        if (validation.error) {
+            return { error: validation.error.details[0].message };
+        }
+        
+        const updatedGroup = await groupRepository.update(idValidation.value, validation.value);
+        if (!updatedGroup) {
+            return { error: "Group not found." };
+        }
+        
+        return { value: updatedGroup };
+    } catch (error) {
+        console.error('Error updating group:', error);
+        return { error: "Database error occurred." };
     }
-    
-    const validation = validateUpdateGroup(data)
-    if (validation.error) {
-        return { error: validation.error.details[0].message }
-    }
-    
-    // Update the group with new data
-    Object.assign(group, validation.value)
-    return { value: group }
 }
 
-function deleteGroup(id) {
-    const group = validateGetGroup(id)
-    if (group.error) {
-        return group
+async function deleteGroup(id) {
+    try {
+        const validation = validateGetGroup(id);
+        if (validation.error) {
+            return { error: validation.error };
+        }
+        
+        const group = await getGroup(id);
+        if (group.error) {
+            return group;
+        }
+        
+        const deleted = await groupRepository.delete(validation.value);
+        if (!deleted) {
+            return { error: "Group not found." };
+        }
+        
+        return { value: group.value };
+    } catch (error) {
+        console.error('Error deleting group:', error);
+        return { error: "Database error occurred." };
     }
-    
-    const index = getIndex(id, groups)
-    if (index !== -1) {
-        groups.splice(index, 1)
-        return { value: group }
+}
+
+async function getAllGroups() {
+    try {
+        const groups = await groupRepository.findAll();
+        return { value: groups };
+    } catch (error) {
+        console.error('Error getting all groups:', error);
+        return { error: "Database error occurred." };
     }
-    return { error: "Group not found." }
+}
+
+async function addUserToGroup(userId, groupId) {
+    try {
+        await groupRepository.addUserToGroup(userId, groupId);
+        return { value: true };
+    } catch (error) {
+        console.error('Error adding user to group:', error);
+        return { error: "Database error occurred." };
+    }
+}
+
+async function removeUserFromGroup(userId, groupId) {
+    try {
+        const removed = await groupRepository.removeUserFromGroup(userId, groupId);
+        if (!removed) {
+            return { error: "User not found in group." };
+        }
+        return { value: true };
+    } catch (error) {
+        console.error('Error removing user from group:', error);
+        return { error: "Database error occurred." };
+    }
 }
 
 exports.getGroup = getGroup;
 exports.createGroup = createGroup;
 exports.updateGroup = updateGroup;
 exports.deleteGroup = deleteGroup;
+exports.getAllGroups = getAllGroups;
+exports.addUserToGroup = addUserToGroup;
+exports.removeUserFromGroup = removeUserFromGroup;
