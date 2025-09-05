@@ -1,0 +1,27 @@
+{
+  "name": "take5",
+  "version": "1.0.0",
+  "description": "app for staying connected",
+  "homepage": "https://github.com/myles-harris/take5#readme",
+  "bugs": {
+    "url": "https://github.com/myles-harris/take5/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/myles-harris/take5.git"
+  },
+  "license": "ISC",
+  "author": "Myles Harris",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "aws-sdk": "^2.1692.0",
+    "dotenv": "^16.3.1",
+    "express": "^5.1.0",
+    "joi": "^17.13.3",
+    "pg": "^8.11.3"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "name": "take5-scheduling-lambda-dev",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Take5 Scheduling Lambda Function - Dev Environment",
+  "main": "index.mjs",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

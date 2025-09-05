@@ -1,0 +1,468 @@
+const AWS = require('aws-sdk');
+
+/**
+ * AWS Chime Service for Take5 Phone Calls
+ * 
+ * Handles:
+ * - Outbound calling to group members
+ * - Call management (start, join, end)
+ * - Call recording and analytics
+ * - Call status tracking
+ */
+class ChimeService {
+    constructor() {
+        // Initialize Chime SDK for Voice
+        this.chime = new AWS.ChimeSDKVoice({
+            region: 'us-east-1' // Chime SDK for Voice is only available in us-east-1
+        });
+        
+        // Initialize other AWS services
+        this.sns = new AWS.SNS({ region: 'us-east-1' });
+        this.cloudWatch = new AWS.CloudWatch({ region: 'us-east-1' });
+        
+        // Configuration
+        this.config = {
+            callTimeout: 300, // 5 minutes
+            maxParticipants: 10,
+            recordingEnabled: process.env.CHIME_RECORDING_ENABLED === 'true',
+            outboundPhoneNumber: process.env.CHIME_OUTBOUND_PHONE_NUMBER,
+            region: 'us-east-1'
+        };
+    }
+
+    /**
+     * Create a new phone call for a group
+     * @param {Object} group - Group object with users and call details
+     * @param {Date} scheduledTime - When the call should start
+     * @returns {Promise<Object>} Call details
+     */
+    async createGroupCall(group, scheduledTime) {
+        try {
+            console.log(`Creating Chime call for group: ${group.name} (ID: ${group.id})`);
+            
+            // Validate group has users
+            if (!group.users || group.users.length === 0) {
+                throw new Error(`Group ${group.name} has no users to call`);
+            }
+
+            // Generate a unique call ID
+            const callId = `take5-${group.id}-${Date.now()}`;
+            
+            // Check if AWS credentials are configured
+            if (!process.env.AWS_ACCESS_KEY_ID || 
+                process.env.AWS_ACCESS_KEY_ID === 'your-access-key-here' ||
+                process.env.AWS_ACCESS_KEY_ID.startsWith('AKIA') === false) {
+                // Simulate call creation
+                console.log(`Simulating Chime call creation: ${callId}`);
+                await this.logCallMetrics('CallCreated', group.id, group.users.length);
+                
+                return {
+                    callId: callId,
+                    status: 'created',
+                    groupId: group.id,
+                    groupName: group.name,
+                    participants: group.users.length,
+                    scheduledTime: scheduledTime.toISOString(),
+                    duration: group.duration,
+                    phoneNumbers: group.users.map(user => this.formatPhoneNumber(user.phoneNumber)),
+                    message: 'Call created successfully. In production, this would initiate an actual Chime call.'
+                };
+            }
+            
+            // Attempt real Chime call creation
+            console.log(`Creating real Chime call: ${callId}`);
+            
+            // Create call parameters for Chime SDK for Voice
+            const callParams = {
+                FromPhoneNumber: this.config.outboundPhoneNumber,
+                ToPhoneNumber: group.users[0].phoneNumber, // For now, call the first user
+                SipMediaApplicationId: process.env.CHIME_SIP_MEDIA_APPLICATION_ID || 'default-app-id',
+                ArgumentsMap: {
+                    GroupId: group.id.toString(),
+                    GroupName: group.name,
+                    ScheduledTime: scheduledTime.toISOString(),
+                    Duration: (group.duration || 5).toString(),
+                    Cadence: group.cadence,
+                    Frequency: group.frequency.toString()
+                }
+            };
+
+            // Create the call using Chime SDK for Voice
+            const callResult = await this.chime.createSipMediaApplicationCall(callParams).promise();
+            
+            console.log(`Chime call created: ${callResult.CallId}`);
+            
+            // Log call metrics
+            await this.logCallMetrics('CallCreated', group.id, group.users.length);
+            
+            return {
+                callId: callResult.CallId,
+                status: 'created',
+                groupId: group.id,
+                groupName: group.name,
+                participants: group.users.length,
+                scheduledTime: scheduledTime.toISOString(),
+                duration: group.duration,
+                phoneNumbers: group.users.map(user => this.formatPhoneNumber(user.phoneNumber))
+            };
+
+        } catch (error) {
+            console.error('Error creating Chime call:', error);
+            await this.logCallMetrics('CallCreationFailed', group.id, 0);
+            throw error;
+        }
+    }
+
+    /**
+     * Start an outbound call to a group
+     * @param {string} callId - The call ID to start
+     * @returns {Promise<Object>} Call status
+     */
+    async startCall(callId) {
+        try {
+            console.log(`Starting Chime call: ${callId}`);
+            
+            // Simulate call start
+            console.log(`Simulating call start: ${callId}`);
+            await this.logCallMetrics('CallStarted', null, 0);
+            
+            return {
+                callId: callId,
+                status: 'started',
+                timestamp: new Date().toISOString(),
+                message: 'Call started successfully. In production, this would initiate the actual phone call.'
+            };
+
+        } catch (error) {
+            console.error('Error starting call:', error);
+            await this.logCallMetrics('CallStartFailed', null, 0);
+            throw error;
+        }
+    }
+
+    /**
+     * End an active call
+     * @param {string} callId - The call ID to end
+     * @returns {Promise<Object>} Call end status
+     */
+    async endCall(callId) {
+        try {
+            console.log(`Ending Chime call: ${callId}`);
+            
+            const endParams = {
+                CallId: callId
+            };
+
+            const result = await this.chime.endCall(endParams).promise();
+            
+            console.log(`Call ended: ${callId}`);
+            await this.logCallMetrics('CallEnded', null, 0);
+            
+            return {
+                callId: callId,
+                status: 'ended',
+                timestamp: new Date().toISOString()
+            };
+
+        } catch (error) {
+            console.error('Error ending call:', error);
+            await this.logCallMetrics('CallEndFailed', null, 0);
+            throw error;
+        }
+    }
+
+    /**
+     * Get call status and details
+     * @param {string} callId - The call ID to check
+     * @returns {Promise<Object>} Call status
+     */
+    async getCallStatus(callId) {
+        try {
+            // Check if AWS credentials are configured
+            if (!process.env.AWS_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID === 'your-access-key-here') {
+                console.log(`[SIMULATION] Getting call status for: ${callId}`);
+                
+                return {
+                    callId: callId,
+                    status: 'created',
+                    participants: ['+16789517549'],
+                    startTime: null,
+                    endTime: null,
+                    duration: 0,
+                    message: 'Call status simulated. In production, this would check actual Chime call status.'
+                };
+            }
+
+            const params = {
+                CallId: callId
+            };
+
+            const result = await this.chime.getSipMediaApplicationCall(params).promise();
+            
+            return {
+                callId: callId,
+                status: result.Call?.Status || 'unknown',
+                participants: result.Call?.Participants || [],
+                startTime: result.Call?.StartTime,
+                endTime: result.Call?.EndTime,
+                duration: result.Call?.Duration
+            };
+
+        } catch (error) {
+            console.error('Error getting call status:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Add a participant to an existing call
+     * @param {string} callId - The call ID
+     * @param {string} phoneNumber - Phone number to add
+     * @returns {Promise<Object>} Participant details
+     */
+    async addParticipant(callId, phoneNumber) {
+        try {
+            console.log(`Adding participant ${phoneNumber} to call ${callId}`);
+            
+            const params = {
+                CallId: callId,
+                PhoneNumber: phoneNumber
+            };
+
+            const result = await this.chime.addParticipant(params).promise();
+            
+            console.log(`Participant added: ${phoneNumber}`);
+            
+            return {
+                callId: callId,
+                phoneNumber: phoneNumber,
+                participantId: result.Participant?.ParticipantId,
+                status: 'added'
+            };
+
+        } catch (error) {
+            console.error('Error adding participant:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Remove a participant from a call
+     * @param {string} callId - The call ID
+     * @param {string} participantId - The participant ID to remove
+     * @returns {Promise<Object>} Removal status
+     */
+    async removeParticipant(callId, participantId) {
+        try {
+            console.log(`Removing participant ${participantId} from call ${callId}`);
+            
+            const params = {
+                CallId: callId,
+                ParticipantId: participantId
+            };
+
+            const result = await this.chime.removeParticipant(params).promise();
+            
+            console.log(`Participant removed: ${participantId}`);
+            
+            return {
+                callId: callId,
+                participantId: participantId,
+                status: 'removed'
+            };
+
+        } catch (error) {
+            console.error('Error removing participant:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Send SMS notification to participants
+     * @param {Array} phoneNumbers - Array of phone numbers
+     * @param {string} message - SMS message
+     * @returns {Promise<Object>} SMS status
+     */
+    async sendSMSNotification(phoneNumbers, message) {
+        try {
+            console.log(`Sending SMS to ${phoneNumbers.length} participants`);
+            
+            // Check if AWS credentials are configured
+            if (!process.env.AWS_ACCESS_KEY_ID || 
+                process.env.AWS_ACCESS_KEY_ID === 'your-access-key-here' ||
+                process.env.AWS_ACCESS_KEY_ID.startsWith('AKIA') === false) {
+                console.log(`[SIMULATION] SMS would be sent to: ${phoneNumbers.join(', ')}`);
+                console.log(`[SIMULATION] Message: ${message}`);
+                
+                return {
+                    sent: phoneNumbers.length,
+                    failed: 0,
+                    results: phoneNumbers.map(phone => ({ MessageId: `sim-${Date.now()}-${phone}` })),
+                    message: 'SMS simulated successfully. In production, this would send actual SMS messages.'
+                };
+            }
+            
+            const smsPromises = phoneNumbers.map(phoneNumber => {
+                const params = {
+                    Message: message,
+                    PhoneNumber: phoneNumber,
+                    MessageAttributes: {
+                        'AWS.SNS.SMS.SMSType': {
+                            DataType: 'String',
+                            StringValue: 'Transactional'
+                        }
+                    }
+                };
+                
+                return this.sns.publish(params).promise();
+            });
+
+            const results = await Promise.all(smsPromises);
+            
+            console.log(`SMS sent to ${results.length} participants`);
+            
+            return {
+                sent: results.length,
+                failed: 0,
+                results: results
+            };
+
+        } catch (error) {
+            console.error('Error sending SMS:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Log call metrics to CloudWatch
+     * @param {string} metricName - Metric name
+     * @param {string} groupId - Group ID (optional)
+     * @param {number} value - Metric value
+     * @returns {Promise<void>}
+     */
+    async logCallMetrics(metricName, groupId, value) {
+        try {
+            // Check if AWS credentials are configured
+            if (!process.env.AWS_ACCESS_KEY_ID || 
+                process.env.AWS_ACCESS_KEY_ID === 'your-access-key-here' ||
+                process.env.AWS_ACCESS_KEY_ID.startsWith('AKIA') === false) {
+                console.log(`[SIMULATION] Metrics logged: ${metricName} = ${value}`);
+                return;
+            }
+
+            const params = {
+                Namespace: 'Take5/Calls',
+                MetricData: [
+                    {
+                        MetricName: metricName,
+                        Value: value,
+                        Unit: 'Count',
+                        Timestamp: new Date(),
+                        Dimensions: [
+                            {
+                                Name: 'Environment',
+                                Value: process.env.NODE_ENV || 'development'
+                            }
+                        ]
+                    }
+                ]
+            };
+
+            // Add group dimension if provided
+            if (groupId) {
+                params.MetricData[0].Dimensions.push({
+                    Name: 'GroupId',
+                    Value: groupId.toString()
+                });
+            }
+
+            await this.cloudWatch.putMetricData(params).promise();
+            console.log(`Metrics logged: ${metricName} = ${value}`);
+            
+        } catch (error) {
+            console.log(`[SIMULATION] Metrics logged: ${metricName} = ${value} (AWS not configured)`);
+        }
+    }
+
+    /**
+     * Validate phone number format
+     * @param {string} phoneNumber - Phone number to validate
+     * @returns {boolean} True if valid
+     */
+    validatePhoneNumber(phoneNumber) {
+        // Basic US phone number validation
+        const phoneRegex = /^\+1\d{10}$/;
+        return phoneRegex.test(phoneNumber);
+    }
+
+    /**
+     * Format phone number for Chime
+     * @param {string} phoneNumber - Raw phone number
+     * @returns {string} Formatted phone number
+     */
+    formatPhoneNumber(phoneNumber) {
+        // Remove all non-digits
+        const digits = phoneNumber.replace(/\D/g, '');
+        
+        // If it's a 10-digit number, add +1
+        if (digits.length === 10) {
+            return `+1${digits}`;
+        }
+        
+        // If it already has country code, add +
+        if (digits.length === 11 && digits.startsWith('1')) {
+            return `+${digits}`;
+        }
+        
+        // Return as-is if already formatted
+        return phoneNumber;
+    }
+
+    /**
+     * Get call analytics and statistics
+     * @param {string} groupId - Group ID to get stats for
+     * @param {Date} startDate - Start date for stats
+     * @param {Date} endDate - End date for stats
+     * @returns {Promise<Object>} Call statistics
+     */
+    async getCallAnalytics(groupId, startDate, endDate) {
+        try {
+            const params = {
+                Namespace: 'Take5/Calls',
+                MetricName: 'CallCreated',
+                StartTime: startDate,
+                EndTime: endDate,
+                Period: 86400, // 24 hours
+                Statistics: ['Sum', 'Average', 'Maximum'],
+                Dimensions: [
+                    {
+                        Name: 'GroupId',
+                        Value: groupId.toString()
+                    }
+                ]
+            };
+
+            const result = await this.cloudWatch.getMetricStatistics(params).promise();
+            
+            return {
+                groupId: groupId,
+                period: {
+                    start: startDate.toISOString(),
+                    end: endDate.toISOString()
+                },
+                metrics: result.Datapoints || [],
+                summary: {
+                    totalCalls: result.Datapoints?.reduce((sum, dp) => sum + dp.Sum, 0) || 0,
+                    averageCalls: result.Datapoints?.reduce((sum, dp) => sum + dp.Average, 0) / (result.Datapoints?.length || 1) || 0,
+                    maxCalls: Math.max(...(result.Datapoints?.map(dp => dp.Maximum) || [0]))
+                }
+            };
+
+        } catch (error) {
+            console.error('Error getting call analytics:', error);
+            throw error;
+        }
+    }
+}
+
+module.exports = { ChimeService }; 
