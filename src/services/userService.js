@@ -1,4 +1,4 @@
-const { validatePostUser, validateGetUser, validateUpdateUser } = require('../utils/helpers/validators')
+const { validateCreateUser, validateGetUser, validateUpdateUser } = require('../utils/helpers/validators')
 const { UserRepository } = require('../db/userRepository')
 
 const userRepository = new UserRepository();
@@ -23,7 +23,7 @@ async function getUser(id) {
 
 async function createUser(data) {
     try {
-        const validation = validatePostUser(data);
+        const validation = validateCreateUser(data);
         if (validation.error) {
             return { error: validation.error.details[0].message };
         }

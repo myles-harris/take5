@@ -1,4 +1,4 @@
-const { validatePostGroup, validateGetGroup, validateUpdateGroup } = require('../utils/helpers/validators')
+const { validateCreateGroup, validateGetGroup, validateUpdateGroup } = require('../utils/helpers/validators')
 const { GroupRepository } = require('../db/groupRepository')
 
 const groupRepository = new GroupRepository();
@@ -23,7 +23,7 @@ async function getGroup(id) {
 
 async function createGroup(data) {
     try {
-        const validation = validatePostGroup(data);
+        const validation = validateCreateGroup(data);
         if (validation.error) {
             return { error: validation.error.details[0].message };
         }

@@ -54,3 +54,14 @@ The application will automatically:
 - `POST /api/group` - Create new group
 - `PUT /api/group/:id` - Update group
 - `DELETE /api/group/:id` - Delete group
+
+### Chime (Phone Calls)
+- `POST /api/chime/call` - Create a new phone call for a group
+- `POST /api/chime/call/:callId/start` - Start an existing call
+- `POST /api/chime/call/:callId/end` - End an active call
+- `GET /api/chime/call/:callId/status` - Get call status and details
+- `POST /api/chime/call/:callId/participant` - Add a participant to a call
+- `DELETE /api/chime/call/:callId/participant/:participantId` - Remove a participant from a call
+- `POST /api/chime/sms` - Send SMS notification to participants
+- `GET /api/chime/analytics/:groupId` - Get call analytics for a group
+- `POST /api/chime/schedule-group-call` - Schedule a call for a group based on scheduling service
