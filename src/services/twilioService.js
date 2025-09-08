@@ -1,0 +1,381 @@
+const twilio = require('twilio');
+
+class TwilioService {
+    constructor() {
+        this.accountSid = process.env.TWILIO_ACCOUNT_SID;
+        this.authToken = process.env.TWILIO_AUTH_TOKEN;
+        this.apiKeySid = process.env.TWILIO_API_KEY_SID;
+        this.apiKeySecret = process.env.TWILIO_API_KEY_SECRET;
+        
+        this.isConfigured = !!this.accountSid && !!this.authToken;
+        this.hasApiKeys = !!this.apiKeySid && !!this.apiKeySecret;
+        
+        if (this.isConfigured) {
+            this.client = twilio(this.accountSid, this.authToken);
+        }
+        
+        console.log('TwilioService initialized:', {
+            isConfigured: this.isConfigured,
+            hasAccountSid: !!this.accountSid,
+            hasAuthToken: !!this.authToken,
+            hasApiKeys: this.hasApiKeys
+        });
+    }
+
+    /**
+     * Create a video call for a group using Twilio Video
+     * @param {Object} group - Group object with users
+     * @param {Date} scheduledTime - When the call should be scheduled
+     * @returns {Object} Call details
+     */
+    async createGroupCall(group, scheduledTime) {
+        try {
+            console.log(`Creating Twilio video call for group: ${group.name} (ID: ${group.id})`);
+            
+            const callId = `take5-video-${group.id}-${Date.now()}`;
+            
+            // Check if Twilio is configured
+            if (!this.isConfigured) {
+                console.log('Simulating Twilio video call creation:', callId);
+                return this.simulateVideoCallCreation(group, callId, scheduledTime);
+            }
+
+            // Create a Twilio Video Room
+            const room = await this.createVideoRoom(callId, group);
+            
+            // Generate access tokens for each user (if API keys are available)
+            let participants = [];
+            if (this.hasApiKeys) {
+                participants = await this.createParticipants(group, room.sid);
+            } else {
+                console.log('API keys not available - creating basic participant info');
+                participants = group.users.map(user => ({
+                    userId: user.id,
+                    phoneNumber: user.phoneNumber,
+                    identity: `user-${user.id}-${user.phoneNumber}`,
+                    message: 'Access token requires API keys'
+                }));
+            }
+            
+            return {
+                callId,
+                status: 'created',
+                groupId: group.id,
+                groupName: group.name,
+                participants: group.users.length,
+                scheduledTime: scheduledTime.toISOString(),
+                duration: group.duration,
+                phoneNumbers: group.users.map(user => user.phoneNumber),
+                roomSid: room.sid,
+                roomName: room.uniqueName,
+                participants: participants,
+                joinUrl: `https://take5-video.herokuapp.com/join/${room.sid}`,
+                message: this.hasApiKeys ? 'Video call created with access tokens' : 'Video room created - access tokens require API keys',
+                smsResults: { sent: 0, failed: 0, message: 'SMS disabled - video call only' }
+            };
+            
+        } catch (error) {
+            console.error('Error creating Twilio video call:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Create a Twilio Video Room
+     * @param {string} callId - Unique call identifier
+     * @param {Object} group - Group object
+     * @returns {Object} Twilio Room object
+     */
+    async createVideoRoom(callId, group) {
+        try {
+            const room = await this.client.video.v1.rooms.create({
+                uniqueName: `take5-${group.id}-${Date.now()}`,
+                type: 'group',
+                recordParticipantsOnConnect: false,
+                maxParticipants: group.users.length + 5
+            });
+
+            console.log(`Twilio video room created: ${room.sid}`);
+            return room;
+            
+        } catch (error) {
+            console.error('Error creating Twilio video room:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Create access tokens for participants
+     * @param {Object} group - Group object with users
+     * @param {string} roomSid - Twilio Room SID
+     * @returns {Array} Array of participant objects with access tokens
+     */
+    async createParticipants(group, roomSid) {
+        try {
+            const participants = [];
+            
+            for (const user of group.users) {
+                const AccessToken = twilio.jwt.AccessToken;
+                const VideoGrant = AccessToken.VideoGrant;
+                
+                const videoGrant = new VideoGrant({
+                    room: roomSid
+                });
+
+                const token = new AccessToken(
+                    this.accountSid,
+                    this.apiKeySid,
+                    this.apiKeySecret,
+                    { identity: `user-${user.id}-${user.phoneNumber}` }
+                );
+
+                token.addGrant(videoGrant);
+                token.ttl = 3600; // 1 hour
+
+                participants.push({
+                    userId: user.id,
+                    phoneNumber: user.phoneNumber,
+                    identity: `user-${user.id}-${user.phoneNumber}`,
+                    accessToken: token.toJwt(),
+                    joinUrl: `https://take5-video.herokuapp.com/join/${roomSid}?token=${token.toJwt()}`
+                });
+            }
+
+            console.log(`Created ${participants.length} participant access tokens`);
+            return participants;
+            
+        } catch (error) {
+            console.error('Error creating participants:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Simulate video call creation for testing
+     */
+    simulateVideoCallCreation(group, callId, scheduledTime) {
+        console.log('Simulating Twilio video call creation');
+        return {
+            callId,
+            status: 'simulated',
+            groupId: group.id,
+            groupName: group.name,
+            participants: group.users.length,
+            scheduledTime: scheduledTime.toISOString(),
+            duration: group.duration,
+            phoneNumbers: group.users.map(user => user.phoneNumber),
+            roomSid: `sim-${callId}`,
+            roomName: callId,
+            joinUrl: `https://take5-video.herokuapp.com/join/sim-${callId}`,
+            message: 'Simulated video call - Twilio not configured',
+            smsResults: { sent: 0, failed: 0, message: 'SMS disabled - video call only' }
+        };
+    }
+
+    /**
+     * Get call status
+     * @param {string} roomSid - Twilio Room SID
+     * @returns {Object} Room status
+     */
+    async getCallStatus(roomSid) {
+        try {
+            if (!this.isConfigured) {
+                return this.simulateCallStatus(roomSid);
+            }
+
+            const room = await this.client.video.v1.rooms(roomSid).fetch();
+            
+            return {
+                roomSid: room.sid,
+                status: room.status,
+                participants: room.participants,
+                dateCreated: room.dateCreated,
+                dateUpdated: room.dateUpdated
+            };
+            
+        } catch (error) {
+            console.error('Error getting call status:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Simulate call status for testing
+     */
+    simulateCallStatus(roomSid) {
+        return {
+            roomSid,
+            status: 'in-progress',
+            participants: 1,
+            dateCreated: new Date().toISOString(),
+            dateUpdated: new Date().toISOString()
+        };
+    }
+
+    /**
+     * End a video call
+     * @param {string} roomSid - Twilio Room SID
+     * @returns {Object} Result
+     */
+    async endCall(roomSid) {
+        try {
+            if (!this.isConfigured) {
+                return { success: true, message: 'Simulated call ended' };
+            }
+
+            await this.client.video.v1.rooms(roomSid).update({ status: 'completed' });
+            
+            return {
+                success: true,
+                roomSid,
+                status: 'completed',
+                message: 'Video call ended successfully'
+            };
+            
+        } catch (error) {
+            console.error('Error ending call:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Add participant to call
+     * @param {string} roomSid - Twilio Room SID
+     * @param {Object} user - User object
+     * @returns {Object} Participant details
+     */
+    async addParticipant(roomSid, user) {
+        try {
+            if (!this.isConfigured) {
+                return this.simulateAddParticipant(roomSid, user);
+            }
+
+            if (!this.hasApiKeys) {
+                return {
+                    success: true,
+                    roomSid,
+                    userId: user.id,
+                    phoneNumber: user.phoneNumber,
+                    message: 'Participant added (access token requires API keys)'
+                };
+            }
+
+            // Generate access token for the new participant
+            const AccessToken = twilio.jwt.AccessToken;
+            const VideoGrant = AccessToken.VideoGrant;
+            
+            const videoGrant = new VideoGrant({
+                room: roomSid
+            });
+
+            const token = new AccessToken(
+                this.accountSid,
+                this.apiKeySid,
+                this.apiKeySecret,
+                { identity: `user-${user.id}-${user.phoneNumber}` }
+            );
+
+            token.addGrant(videoGrant);
+            token.ttl = 3600; // 1 hour
+
+            return {
+                success: true,
+                roomSid,
+                userId: user.id,
+                phoneNumber: user.phoneNumber,
+                identity: `user-${user.id}-${user.phoneNumber}`,
+                accessToken: token.toJwt(),
+                joinUrl: `https://take5-video.herokuapp.com/join/${roomSid}?token=${token.toJwt()}`,
+                message: 'Participant added with access token'
+            };
+            
+        } catch (error) {
+            console.error('Error adding participant:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Simulate adding participant
+     */
+    simulateAddParticipant(roomSid, user) {
+        return {
+            success: true,
+            roomSid,
+            userId: user.id,
+            phoneNumber: user.phoneNumber,
+            message: 'Simulated participant added'
+        };
+    }
+
+    /**
+     * Remove participant from call
+     * @param {string} roomSid - Twilio Room SID
+     * @param {string} identity - Participant identity
+     * @returns {Object} Result
+     */
+    async removeParticipant(roomSid, identity) {
+        try {
+            if (!this.isConfigured) {
+                return { success: true, message: 'Simulated participant removed' };
+            }
+
+            // For Twilio Video, participants are removed by disconnecting them
+            // This would require the participant's connection SID
+            return {
+                success: true,
+                roomSid,
+                identity,
+                message: 'Participant removal simulated (requires connection SID for actual removal)'
+            };
+            
+        } catch (error) {
+            console.error('Error removing participant:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Get call analytics
+     * @param {string} roomSid - Twilio Room SID
+     * @returns {Object} Analytics data
+     */
+    async getCallAnalytics(roomSid) {
+        try {
+            if (!this.isConfigured) {
+                return this.simulateCallAnalytics(roomSid);
+            }
+
+            const room = await this.client.video.v1.rooms(roomSid).fetch();
+            
+            return {
+                roomSid: room.sid,
+                duration: room.duration,
+                participants: room.participants,
+                status: room.status,
+                dateCreated: room.dateCreated,
+                dateUpdated: room.dateUpdated
+            };
+            
+        } catch (error) {
+            console.error('Error getting call analytics:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Simulate call analytics
+     */
+    simulateCallAnalytics(roomSid) {
+        return {
+            roomSid,
+            duration: 300, // 5 minutes
+            participants: 1,
+            status: 'completed',
+            dateCreated: new Date().toISOString(),
+            dateUpdated: new Date().toISOString()
+        };
+    }
+}
+
+module.exports = TwilioService;

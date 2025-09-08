@@ -3,7 +3,8 @@ const express = require('express');
 const app = express();
 const userRoutes = require('./src/api/user');
 const groupRoutes = require('./src/api/group');
-const chimeRoutes = require('./src/api/chime');
+const twilioRoutes = require("./src/api/twilio");
+const schedulingRoutes = require("./src/api/scheduling");
 const { initializeDatabase } = require('./src/db/init');
 
 app.use(express.json());
@@ -11,7 +12,8 @@ app.use(express.json());
 // Mount API routes
 app.use('/api', userRoutes);
 app.use('/api', groupRoutes);
-app.use('/api/chime', chimeRoutes);
+app.use("/api/twilio", twilioRoutes);
+app.use("/api/scheduling", schedulingRoutes);
 
 app.get('/', (req, res) => {
   res.send('<h1>Hello from your Take5 Express.js server!!</h1>');

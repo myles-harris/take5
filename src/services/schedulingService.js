@@ -3,15 +3,15 @@ const { Cadence } = require('../utils/constants/cadenceType');
 class SchedulingService {
     /**
      * Calculate the next call time for a group based on its cadence and frequency
-     * @param {Object} group - Group object with cadence, frequency, and last call info
+     * @param {string} cadence - Cadence type (daily, weekly, monthly)
+     * @param {number} frequency - Frequency of calls
+     * @param {Object} rollCall - Roll call history
      * @param {Date} currentTime - Current time (defaults to now)
      * @returns {Date} Next scheduled call time
      */
-    static calculateNextCallTime(group, currentTime = new Date()) {
-        const { cadence, frequency } = group;
-        
+    static calculateNextCallTime(cadence, frequency, rollCall = {}, currentTime = new Date()) {
         // Get the last call time from roll call or use current time as fallback
-        const lastCallTime = this.getLastCallTime(group) || currentTime;
+        const lastCallTime = this.getLastCallTime(rollCall) || currentTime;
         
         switch (cadence) {
             case Cadence.DAILY:
@@ -32,303 +32,184 @@ class SchedulingService {
      * @returns {Date} Next call time
      */
     static calculateDailyNextCall(lastCallTime, currentTime) {
-        const nextCallTime = new Date(lastCallTime);
+        const nextCall = new Date(lastCallTime);
+        nextCall.setDate(nextCall.getDate() + 1);
+        nextCall.setHours(9, 0, 0, 0); // 9 AM
         
-        // Move to next day
-        nextCallTime.setDate(nextCallTime.getDate() + 1);
-        
-        // If the calculated time is in the past, find the next available day
-        while (nextCallTime <= currentTime) {
-            nextCallTime.setDate(nextCallTime.getDate() + 1);
+        // If the next call is in the past, move to tomorrow
+        if (nextCall <= currentTime) {
+            nextCall.setDate(nextCall.getDate() + 1);
         }
         
-        // Randomize the time within business hours (9 AM to 8 PM)
-        const randomHour = 9 + Math.floor(Math.random() * 11); // 9 AM to 8 PM
-        const randomMinute = Math.floor(Math.random() * 60);
-        nextCallTime.setHours(randomHour, randomMinute, 0, 0);
-        
-        return nextCallTime;
+        return nextCall;
     }
 
     /**
      * Calculate next call time for weekly cadence
      * @param {Date} lastCallTime - Last call time
-     * @param {number} frequency - Number of calls per week (max 7)
+     * @param {number} frequency - Number of calls per week
      * @param {Date} currentTime - Current time
      * @returns {Date} Next call time
      */
     static calculateWeeklyNextCall(lastCallTime, frequency, currentTime) {
-        // Ensure frequency doesn't exceed 7 (one call per day max)
-        const safeFrequency = Math.min(frequency, 7);
+        const callDays = this.generateWeeklyCallDays(frequency);
+        const nextCall = new Date(lastCallTime);
         
-        // Get the next available call day from the weekly schedule
-        const nextCallDay = this.getNextWeeklyCallDay(lastCallTime, safeFrequency, currentTime);
+        // Find the next available call day
+        let attempts = 0;
+        while (attempts < 14) { // Prevent infinite loop
+            nextCall.setDate(nextCall.getDate() + 1);
+            const dayOfWeek = nextCall.getDay();
+            
+            if (callDays.includes(dayOfWeek)) {
+                nextCall.setHours(9, 0, 0, 0); // 9 AM
+                if (nextCall > currentTime) {
+                    return nextCall;
+                }
+            }
+            attempts++;
+        }
         
-        // Randomize the time within business hours
-        const randomHour = 9 + Math.floor(Math.random() * 11); // 9 AM to 8 PM
-        const randomMinute = Math.floor(Math.random() * 60);
-        nextCallDay.setHours(randomHour, randomMinute, 0, 0);
-        
-        return nextCallDay;
+        return null;
     }
 
     /**
      * Calculate next call time for monthly cadence
      * @param {Date} lastCallTime - Last call time
-     * @param {number} frequency - Number of calls per month (max 30)
+     * @param {number} frequency - Number of calls per month
      * @param {Date} currentTime - Current time
      * @returns {Date} Next call time
      */
     static calculateMonthlyNextCall(lastCallTime, frequency, currentTime) {
-        // Ensure frequency doesn't exceed 30 (one call per day max)
-        const safeFrequency = Math.min(frequency, 30);
+        const callDays = this.generateMonthlyCallDays(frequency);
+        const nextCall = new Date(lastCallTime);
         
-        // Get the next available call day from the monthly schedule
-        const nextCallDay = this.getNextMonthlyCallDay(lastCallTime, safeFrequency, currentTime);
-        
-        // Randomize the time within business hours
-        const randomHour = 10 + Math.floor(Math.random() * 8); // 10 AM to 6 PM
-        const randomMinute = Math.floor(Math.random() * 60);
-        nextCallDay.setHours(randomHour, randomMinute, 0, 0);
-        
-        return nextCallDay;
-    }
-
-    /**
-     * Get the next call day for weekly cadence
-     * @param {Date} lastCallTime - Last call time
-     * @param {number} frequency - Number of calls per week
-     * @param {Date} currentTime - Current time
-     * @returns {Date} Next call day
-     */
-    static getNextWeeklyCallDay(lastCallTime, frequency, currentTime) {
-        // Generate the next 7 days of call schedule
-        const weeklySchedule = this.generateWeeklyCallDays(lastCallTime, frequency);
-        
-        // Find the first day that's in the future
-        for (const callDay of weeklySchedule) {
-            if (callDay > currentTime) {
-                return callDay;
+        // Find the next available call day
+        let attempts = 0;
+        while (attempts < 60) { // Prevent infinite loop
+            nextCall.setDate(nextCall.getDate() + 1);
+            const dayOfMonth = nextCall.getDate();
+            
+            if (callDays.includes(dayOfMonth)) {
+                nextCall.setHours(9, 0, 0, 0); // 9 AM
+                if (nextCall > currentTime) {
+                    return nextCall;
+                }
             }
+            attempts++;
         }
         
-        // If all days are in the past, generate a new week starting from current time
-        const newWeekStart = new Date(currentTime);
-        newWeekStart.setDate(newWeekStart.getDate() + 1); // Start from tomorrow
-        const newWeeklySchedule = this.generateWeeklyCallDays(newWeekStart, frequency);
-        
-        return newWeeklySchedule[0];
+        return null;
     }
 
     /**
-     * Get the next call day for monthly cadence
-     * @param {Date} lastCallTime - Last call time
-     * @param {number} frequency - Number of calls per month
-     * @param {Date} currentTime - Current time
-     * @returns {Date} Next call day
-     */
-    static getNextMonthlyCallDay(lastCallTime, frequency, currentTime) {
-        // Generate the next 30 days of call schedule
-        const monthlySchedule = this.generateMonthlyCallDays(lastCallTime, frequency);
-        
-        // Find the first day that's in the future
-        for (const callDay of monthlySchedule) {
-            if (callDay > currentTime) {
-                return callDay;
-            }
-        }
-        
-        // If all days are in the past, generate a new month starting from current time
-        const newMonthStart = new Date(currentTime);
-        newMonthStart.setDate(newMonthStart.getDate() + 1); // Start from tomorrow
-        const newMonthlySchedule = this.generateMonthlyCallDays(newMonthStart, frequency);
-        
-        return newMonthlySchedule[0];
-    }
-
-    /**
-     * Generate call days for a weekly period
-     * @param {Date} startDate - Starting date
+     * Generate random days of the week for weekly calls
      * @param {number} frequency - Number of calls per week
-     * @returns {Array} Array of call days
+     * @returns {Array} Array of day numbers (0-6, Sunday-Saturday)
      */
-    static generateWeeklyCallDays(startDate, frequency) {
-        const callDays = [];
-        const weekStart = new Date(startDate);
-        
-        // Generate random days within the next 7 days
-        const availableDays = [];
-        for (let i = 0; i < 7; i++) {
-            const day = new Date(weekStart);
-            day.setDate(day.getDate() + i);
-            availableDays.push(day);
-        }
-        
-        // Randomly select 'frequency' number of days
-        const selectedDays = this.selectRandomDays(availableDays, frequency);
-        
-        return selectedDays.sort((a, b) => a - b);
+    static generateWeeklyCallDays(frequency) {
+        const days = [0, 1, 2, 3, 4, 5, 6]; // Sunday to Saturday
+        return this.selectRandomDays(days, frequency);
     }
 
     /**
-     * Generate call days for a monthly period
-     * @param {Date} startDate - Starting date
+     * Generate random days of the month for monthly calls
      * @param {number} frequency - Number of calls per month
-     * @returns {Array} Array of call days
+     * @returns {Array} Array of day numbers (1-30)
      */
-    static generateMonthlyCallDays(startDate, frequency) {
-        const callDays = [];
-        const monthStart = new Date(startDate);
-        
-        // Generate random days within the next 30 days
-        const availableDays = [];
-        for (let i = 0; i < 30; i++) {
-            const day = new Date(monthStart);
-            day.setDate(day.getDate() + i);
-            availableDays.push(day);
-        }
-        
-        // Randomly select 'frequency' number of days
-        const selectedDays = this.selectRandomDays(availableDays, frequency);
-        
-        return selectedDays.sort((a, b) => a - b);
+    static generateMonthlyCallDays(frequency) {
+        const days = Array.from({ length: 30 }, (_, i) => i + 1); // Days 1-30
+        return this.selectRandomDays(days, frequency);
     }
 
     /**
-     * Select random days from available days
-     * @param {Array} availableDays - Array of available days
+     * Select random days from an array
+     * @param {Array} days - Array of available days
      * @param {number} count - Number of days to select
-     * @returns {Array} Selected days
+     * @returns {Array} Array of selected days
      */
-    static selectRandomDays(availableDays, count) {
-        const shuffled = [...availableDays].sort(() => 0.5 - Math.random());
-        return shuffled.slice(0, Math.min(count, availableDays.length));
+    static selectRandomDays(days, count) {
+        const shuffled = [...days].sort(() => 0.5 - Math.random());
+        return shuffled.slice(0, count).sort((a, b) => a - b);
     }
 
     /**
-     * Get the last call time from group's roll call
-     * @param {Object} group - Group object with roll call data
-     * @returns {Date|null} Last call time or null if no previous calls
+     * Get the last call time from roll call history
+     * @param {Object} rollCall - Roll call history
+     * @returns {Date|null} Last call time or null
      */
-    static getLastCallTime(group) {
-        if (!group.rollCall || Object.keys(group.rollCall).length === 0) {
+    static getLastCallTime(rollCall) {
+        if (!rollCall || typeof rollCall !== 'object') {
             return null;
         }
         
-        // Find the most recent call date
-        const callDates = Object.keys(group.rollCall)
-            .map(dateStr => new Date(dateStr))
+        const callTimes = Object.keys(rollCall)
+            .filter(key => rollCall[key] && rollCall[key].status === 'completed')
+            .map(key => new Date(key))
             .filter(date => !isNaN(date.getTime()))
             .sort((a, b) => b - a); // Sort descending (most recent first)
         
-        return callDates.length > 0 ? callDates[0] : null;
+        return callTimes.length > 0 ? callTimes[0] : null;
     }
 
     /**
-     * Check if a group is due for a call
-     * @param {Object} group - Group object
-     * @param {Date} currentTime - Current time (defaults to now)
-     * @returns {boolean} True if group is due for a call
-     */
-    static isGroupDueForCall(group, currentTime = new Date()) {
-        const nextCallTime = this.calculateNextCallTime(group, currentTime);
-        return nextCallTime <= currentTime;
-    }
-
-    /**
-     * Get all groups that are due for calls
-     * @param {Array} groups - Array of group objects
-     * @param {Date} currentTime - Current time (defaults to now)
-     * @returns {Array} Groups that are due for calls
-     */
-    static getGroupsDueForCalls(groups, currentTime = new Date()) {
-        return groups.filter(group => {
-            if (!group.enabled) return false;
-            return this.isGroupDueForCall(group, currentTime);
-        });
-    }
-
-    /**
-     * Generate a schedule for the next N calls for a group
-     * @param {Object} group - Group object
-     * @param {number} numberOfCalls - Number of future calls to schedule
-     * @param {Date} startTime - Starting time (defaults to now)
-     * @returns {Array} Array of scheduled call times
-     */
-    static generateCallSchedule(group, numberOfCalls = 5, startTime = new Date()) {
-        const schedule = [];
-        let currentCallTime = this.calculateNextCallTime(group, startTime);
-        
-        for (let i = 0; i < numberOfCalls; i++) {
-            schedule.push(new Date(currentCallTime));
-            
-            // Calculate next call time based on this call time
-            const tempGroup = {
-                ...group,
-                rollCall: {
-                    [currentCallTime.toISOString()]: []
-                }
-            };
-            currentCallTime = this.calculateNextCallTime(tempGroup, currentCallTime);
-        }
-        
-        return schedule;
-    }
-
-    /**
-     * Validate if a call time is within acceptable business hours
-     * @param {Date} callTime - Proposed call time
-     * @param {string} timezone - User's timezone
-     * @returns {boolean} True if call time is acceptable
-     */
-    static isCallTimeAcceptable(callTime, timezone = 'UTC') {
-        // Convert to user's timezone (simplified - in production, use a proper timezone library)
-        const hour = callTime.getHours();
-        
-        // Business hours: 9 AM to 8 PM local time
-        return hour >= 9 && hour <= 20;
-    }
-
-    /**
-     * Adjust call time to be within acceptable business hours
-     * @param {Date} callTime - Original call time
-     * @param {string} timezone - User's timezone
-     * @returns {Date} Adjusted call time
-     */
-    static adjustCallTimeToBusinessHours(callTime, timezone = 'UTC') {
-        const adjustedTime = new Date(callTime);
-        const hour = adjustedTime.getHours();
-        
-        if (hour < 9) {
-            // Move to 9 AM
-            adjustedTime.setHours(9, 0, 0, 0);
-        } else if (hour > 20) {
-            // Move to 8 PM
-            adjustedTime.setHours(20, 0, 0, 0);
-        }
-        
-        return adjustedTime;
-    }
-
-    /**
-     * Validate group frequency based on cadence
-     * @param {string} cadence - Group cadence
-     * @param {number} frequency - Group frequency
-     * @returns {boolean} True if frequency is valid for cadence
+     * Validate frequency for a given cadence
+     * @param {string} cadence - Cadence type
+     * @param {number} frequency - Frequency value
+     * @returns {Object} Validation result
      */
     static validateFrequency(cadence, frequency) {
         switch (cadence) {
             case Cadence.DAILY:
-                return frequency === 1; // Daily cadence always has frequency of 1
+                return {
+                    isValid: frequency === 1,
+                    message: frequency === 1 ? 'Valid daily frequency' : 'Daily cadence must have frequency of 1'
+                };
             case Cadence.WEEKLY:
-                return frequency >= 1 && frequency <= 7; // Max 7 calls per week (1 per day)
+                return {
+                    isValid: frequency >= 1 && frequency <= 7,
+                    message: frequency >= 1 && frequency <= 7 ? 'Valid weekly frequency' : 'Weekly frequency must be between 1 and 7'
+                };
             case Cadence.MONTHLY:
-                return frequency >= 1 && frequency <= 30; // Max 30 calls per month (1 per day)
+                return {
+                    isValid: frequency >= 1 && frequency <= 30,
+                    message: frequency >= 1 && frequency <= 30 ? 'Valid monthly frequency' : 'Monthly frequency must be between 1 and 30'
+                };
             default:
-                return false;
+                return {
+                    isValid: false,
+                    message: 'Invalid cadence type'
+                };
         }
+    }
+
+    /**
+     * Check if a call time is acceptable (business hours, etc.)
+     * @param {Date} callTime - Call time to check
+     * @returns {boolean} Whether the time is acceptable
+     */
+    static isCallTimeAcceptable(callTime) {
+        const hour = callTime.getHours();
+        return hour >= 8 && hour <= 18; // 8 AM to 6 PM
+    }
+
+    /**
+     * Adjust call time to business hours if needed
+     * @param {Date} callTime - Call time to adjust
+     * @returns {Date} Adjusted call time
+     */
+    static adjustCallTimeToBusinessHours(callTime) {
+        const adjusted = new Date(callTime);
+        const hour = adjusted.getHours();
+        
+        if (hour < 8) {
+            adjusted.setHours(9, 0, 0, 0); // Move to 9 AM
+        } else if (hour > 18) {
+            adjusted.setHours(17, 0, 0, 0); // Move to 5 PM
+        }
+        
+        return adjusted;
     }
 }
 
 module.exports = { SchedulingService };
-

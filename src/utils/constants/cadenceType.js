@@ -1,7 +1,7 @@
-const Cadence = Object.freeze({
+const Cadence = {
     DAILY: 'daily',
     WEEKLY: 'weekly',
     MONTHLY: 'monthly'
-});
+};
 
-export { Cadence }; 
+module.exports = { Cadence };
