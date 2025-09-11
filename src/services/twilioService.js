@@ -1,4 +1,6 @@
 const twilio = require('twilio');
+const PushNotificationService = require('./pushNotificationService');
+const RoomCleanupService = require('./roomCleanupService');
 
 class TwilioService {
     constructor() {
@@ -9,6 +11,8 @@ class TwilioService {
         
         this.isConfigured = !!this.accountSid && !!this.authToken;
         this.hasApiKeys = !!this.apiKeySid && !!this.apiKeySecret;
+        this.pushNotificationService = new PushNotificationService();
+        this.roomCleanupService = new RoomCleanupService();
         
         if (this.isConfigured) {
             this.client = twilio(this.accountSid, this.authToken);
@@ -57,6 +61,17 @@ class TwilioService {
                 }));
             }
             
+            // Register room for automatic cleanup
+            this.roomCleanupService.registerRoom(room.sid, scheduledTime, group.duration, group.id);
+            
+            // Send push notifications to group members
+            const pushResults = await this.pushNotificationService.sendCallNotification(group, {
+                roomSid: room.sid,
+                roomName: room.uniqueName,
+                joinUrl: `http://localhost:3000/join.html?roomSid=${room.sid}&token=${participants[0]?.accessToken || ''}&scheduledTime=${scheduledTime.toISOString()}`,
+                scheduledTime: scheduledTime.toISOString()
+            });
+            
             return {
                 callId,
                 status: 'created',
@@ -69,9 +84,10 @@ class TwilioService {
                 roomSid: room.sid,
                 roomName: room.uniqueName,
                 participants: participants,
-                joinUrl: `https://take5-video.herokuapp.com/join/${room.sid}`,
+                joinUrl: `http://localhost:3000/join.html?roomSid=${room.sid}&token=${participants[0]?.accessToken || ''}&scheduledTime=${scheduledTime.toISOString()}`,
                 message: this.hasApiKeys ? 'Video call created with access tokens' : 'Video room created - access tokens require API keys',
-                smsResults: { sent: 0, failed: 0, message: 'SMS disabled - video call only' }
+                smsResults: { sent: 0, failed: 0, message: 'SMS disabled - video call only' },
+                pushResults: pushResults
             };
             
         } catch (error) {
@@ -84,48 +100,52 @@ class TwilioService {
      * Create a Twilio Video Room
      * @param {string} callId - Unique call identifier
      * @param {Object} group - Group object
-     * @returns {Object} Twilio Room object
+     * @returns {Object} Room details
      */
     async createVideoRoom(callId, group) {
         try {
-            const room = await this.client.video.v1.rooms.create({
-                uniqueName: `take5-${group.id}-${Date.now()}`,
+            if (!this.isConfigured) {
+                return {
+                    sid: `RM${callId}`,
+                    uniqueName: callId,
+                    status: 'in-progress'
+                };
+            }
+
+            const room = await this.client.video.rooms.create({
+                uniqueName: callId,
                 type: 'group',
-                recordParticipantsOnConnect: false,
-                maxParticipants: group.users.length + 5
+                recordParticipantsOnConnect: false
             });
 
-            console.log(`Twilio video room created: ${room.sid}`);
+            console.log('Twilio video room created:', room.sid);
             return room;
-            
         } catch (error) {
-            console.error('Error creating Twilio video room:', error);
+            console.error('Error creating video room:', error);
             throw error;
         }
     }
 
     /**
-     * Create access tokens for participants
+     * Create participants with access tokens
      * @param {Object} group - Group object with users
-     * @param {string} roomSid - Twilio Room SID
+     * @param {string} roomSid - Twilio Video Room SID
      * @returns {Array} Array of participant objects with access tokens
      */
     async createParticipants(group, roomSid) {
         try {
             const participants = [];
-            
+
             for (const user of group.users) {
-                const AccessToken = twilio.jwt.AccessToken;
-                const VideoGrant = AccessToken.VideoGrant;
-                
-                const videoGrant = new VideoGrant({
+                const accessToken = twilio.jwt.AccessToken;
+                const videoGrant = new twilio.jwt.AccessToken.VideoGrant({
                     room: roomSid
                 });
 
-                const token = new AccessToken(
+                const token = new accessToken(
                     this.accountSid,
-                    this.apiKeySid,
-                    this.apiKeySecret,
+                    this.apiKeySid || this.accountSid,
+                    this.apiKeySecret || this.authToken,
                     { identity: `user-${user.id}-${user.phoneNumber}` }
                 );
 
@@ -137,13 +157,13 @@ class TwilioService {
                     phoneNumber: user.phoneNumber,
                     identity: `user-${user.id}-${user.phoneNumber}`,
                     accessToken: token.toJwt(),
-                    joinUrl: `https://take5-video.herokuapp.com/join/${roomSid}?token=${token.toJwt()}`
+                    joinUrl: `http://localhost:3000/join.html?roomSid=${roomSid}&token=${token.toJwt()}&scheduledTime=${new Date().toISOString()}`
                 });
             }
 
             console.log(`Created ${participants.length} participant access tokens`);
             return participants;
-            
+
         } catch (error) {
             console.error('Error creating participants:', error);
             throw error;
@@ -151,124 +171,24 @@ class TwilioService {
     }
 
     /**
-     * Simulate video call creation for testing
-     */
-    simulateVideoCallCreation(group, callId, scheduledTime) {
-        console.log('Simulating Twilio video call creation');
-        return {
-            callId,
-            status: 'simulated',
-            groupId: group.id,
-            groupName: group.name,
-            participants: group.users.length,
-            scheduledTime: scheduledTime.toISOString(),
-            duration: group.duration,
-            phoneNumbers: group.users.map(user => user.phoneNumber),
-            roomSid: `sim-${callId}`,
-            roomName: callId,
-            joinUrl: `https://take5-video.herokuapp.com/join/sim-${callId}`,
-            message: 'Simulated video call - Twilio not configured',
-            smsResults: { sent: 0, failed: 0, message: 'SMS disabled - video call only' }
-        };
-    }
-
-    /**
-     * Get call status
-     * @param {string} roomSid - Twilio Room SID
-     * @returns {Object} Room status
-     */
-    async getCallStatus(roomSid) {
-        try {
-            if (!this.isConfigured) {
-                return this.simulateCallStatus(roomSid);
-            }
-
-            const room = await this.client.video.v1.rooms(roomSid).fetch();
-            
-            return {
-                roomSid: room.sid,
-                status: room.status,
-                participants: room.participants,
-                dateCreated: room.dateCreated,
-                dateUpdated: room.dateUpdated
-            };
-            
-        } catch (error) {
-            console.error('Error getting call status:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Simulate call status for testing
-     */
-    simulateCallStatus(roomSid) {
-        return {
-            roomSid,
-            status: 'in-progress',
-            participants: 1,
-            dateCreated: new Date().toISOString(),
-            dateUpdated: new Date().toISOString()
-        };
-    }
-
-    /**
-     * End a video call
-     * @param {string} roomSid - Twilio Room SID
-     * @returns {Object} Result
-     */
-    async endCall(roomSid) {
-        try {
-            if (!this.isConfigured) {
-                return { success: true, message: 'Simulated call ended' };
-            }
-
-            await this.client.video.v1.rooms(roomSid).update({ status: 'completed' });
-            
-            return {
-                success: true,
-                roomSid,
-                status: 'completed',
-                message: 'Video call ended successfully'
-            };
-            
-        } catch (error) {
-            console.error('Error ending call:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Add participant to call
-     * @param {string} roomSid - Twilio Room SID
+     * Generate access token for a user to join a specific room
      * @param {Object} user - User object
-     * @returns {Object} Participant details
+     * @param {string} roomSid - Twilio Video Room SID
+     * @returns {string} JWT access token
      */
-    async addParticipant(roomSid, user) {
+    async generateUserAccessToken(user, roomSid) {
         try {
-            if (!this.isConfigured) {
-                return this.simulateAddParticipant(roomSid, user);
+            if (!this.isConfigured || !this.hasApiKeys) {
+                console.log('Simulating access token generation');
+                return `simulated_token_${user.id}_${roomSid}`;
             }
 
-            if (!this.hasApiKeys) {
-                return {
-                    success: true,
-                    roomSid,
-                    userId: user.id,
-                    phoneNumber: user.phoneNumber,
-                    message: 'Participant added (access token requires API keys)'
-                };
-            }
-
-            // Generate access token for the new participant
-            const AccessToken = twilio.jwt.AccessToken;
-            const VideoGrant = AccessToken.VideoGrant;
-            
-            const videoGrant = new VideoGrant({
+            const accessToken = twilio.jwt.AccessToken;
+            const videoGrant = new twilio.jwt.AccessToken.VideoGrant({
                 room: roomSid
             });
 
-            const token = new AccessToken(
+            const token = new accessToken(
                 this.accountSid,
                 this.apiKeySid,
                 this.apiKeySecret,
@@ -278,17 +198,73 @@ class TwilioService {
             token.addGrant(videoGrant);
             token.ttl = 3600; // 1 hour
 
+            return token.toJwt();
+        } catch (error) {
+            console.error('Error generating user access token:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Get call status
+     * @param {string} roomSid - Twilio Video Room SID
+     * @returns {Object} Call status
+     */
+    async getCallStatus(roomSid) {
+        try {
+            if (!this.isConfigured) {
+                return this.simulateCallStatus(roomSid);
+            }
+
+            const room = await this.client.video.rooms(roomSid).fetch();
             return {
-                success: true,
-                roomSid,
-                userId: user.id,
-                phoneNumber: user.phoneNumber,
-                identity: `user-${user.id}-${user.phoneNumber}`,
-                accessToken: token.toJwt(),
-                joinUrl: `https://take5-video.herokuapp.com/join/${roomSid}?token=${token.toJwt()}`,
-                message: 'Participant added with access token'
+                roomSid: room.sid,
+                status: room.status,
+                dateCreated: room.dateCreated,
+                dateUpdated: room.dateUpdated
             };
-            
+        } catch (error) {
+            console.error('Error getting call status:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * End a call
+     * @param {string} roomSid - Twilio Video Room SID
+     * @returns {Object} End call result
+     */
+    async endCall(roomSid) {
+        try {
+            if (!this.isConfigured) {
+                return { success: true, message: 'Simulated call ended' };
+            }
+
+            await this.client.video.rooms(roomSid).update({ status: 'completed' });
+            return { success: true, message: 'Call ended successfully' };
+        } catch (error) {
+            console.error('Error ending call:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Add participant to call
+     * @param {string} roomSid - Twilio Video Room SID
+     * @param {string} identity - Participant identity
+     * @returns {Object} Add participant result
+     */
+    async addParticipant(roomSid, identity) {
+        try {
+            if (!this.isConfigured) {
+                return { success: true, message: 'Simulated participant added' };
+            }
+
+            const participant = await this.client.video.rooms(roomSid).participants.create({
+                identity: identity
+            });
+
+            return { success: true, participant };
         } catch (error) {
             console.error('Error adding participant:', error);
             throw error;
@@ -296,23 +272,10 @@ class TwilioService {
     }
 
     /**
-     * Simulate adding participant
-     */
-    simulateAddParticipant(roomSid, user) {
-        return {
-            success: true,
-            roomSid,
-            userId: user.id,
-            phoneNumber: user.phoneNumber,
-            message: 'Simulated participant added'
-        };
-    }
-
-    /**
      * Remove participant from call
-     * @param {string} roomSid - Twilio Room SID
+     * @param {string} roomSid - Twilio Video Room SID
      * @param {string} identity - Participant identity
-     * @returns {Object} Result
+     * @returns {Object} Remove participant result
      */
     async removeParticipant(roomSid, identity) {
         try {
@@ -320,15 +283,8 @@ class TwilioService {
                 return { success: true, message: 'Simulated participant removed' };
             }
 
-            // For Twilio Video, participants are removed by disconnecting them
-            // This would require the participant's connection SID
-            return {
-                success: true,
-                roomSid,
-                identity,
-                message: 'Participant removal simulated (requires connection SID for actual removal)'
-            };
-            
+            await this.client.video.rooms(roomSid).participants(identity).remove();
+            return { success: true, message: 'Participant removed successfully' };
         } catch (error) {
             console.error('Error removing participant:', error);
             throw error;
@@ -337,8 +293,8 @@ class TwilioService {
 
     /**
      * Get call analytics
-     * @param {string} roomSid - Twilio Room SID
-     * @returns {Object} Analytics data
+     * @param {string} roomSid - Twilio Video Room SID
+     * @returns {Object} Call analytics
      */
     async getCallAnalytics(roomSid) {
         try {
@@ -346,21 +302,64 @@ class TwilioService {
                 return this.simulateCallAnalytics(roomSid);
             }
 
-            const room = await this.client.video.v1.rooms(roomSid).fetch();
-            
+            const room = await this.client.video.rooms(roomSid).fetch();
+            const participants = await this.client.video.rooms(roomSid).participants.list();
+
             return {
                 roomSid: room.sid,
-                duration: room.duration,
-                participants: room.participants,
+                duration: Math.floor((new Date() - new Date(room.dateCreated)) / 1000),
+                participants: participants.length,
                 status: room.status,
                 dateCreated: room.dateCreated,
                 dateUpdated: room.dateUpdated
             };
-            
         } catch (error) {
             console.error('Error getting call analytics:', error);
             throw error;
         }
+    }
+
+    /**
+     * Simulate video call creation for testing
+     */
+    simulateVideoCallCreation(group, callId, scheduledTime) {
+        console.log('Simulating Twilio video call creation');
+        
+        return {
+            callId,
+            status: 'created',
+            groupId: group.id,
+            groupName: group.name,
+            participants: group.users.length,
+            scheduledTime: scheduledTime.toISOString(),
+            duration: group.duration,
+            phoneNumbers: group.users.map(user => user.phoneNumber),
+            roomSid: `RM${callId}`,
+            roomName: callId,
+            participants: group.users.map(user => ({
+                userId: user.id,
+                phoneNumber: user.phoneNumber,
+                identity: `user-${user.id}-${user.phoneNumber}`,
+                accessToken: `simulated_token_${user.id}`,
+                joinUrl: `https://take5-video.herokuapp.com/join/RM${callId}?token=simulated_token_${user.id}`
+            })),
+            joinUrl: `https://take5-video.herokuapp.com/join/RM${callId}`,
+            message: 'Simulated video call created',
+            smsResults: { sent: 0, failed: 0, message: 'SMS disabled - video call only' },
+            pushResults: { sent: group.users.length, failed: 0, message: 'Simulated push notifications sent', simulated: true }
+        };
+    }
+
+    /**
+     * Simulate call status
+     */
+    simulateCallStatus(roomSid) {
+        return {
+            roomSid,
+            status: 'in-progress',
+            dateCreated: new Date().toISOString(),
+            dateUpdated: new Date().toISOString()
+        };
     }
 
     /**
