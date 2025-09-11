@@ -1,7 +1,0 @@
-const Cadence = Object.freeze({
-    DAILY: 'daily',
-    WEEKLY: 'weekly',
-    MONTHLY: 'monthly'
-});
-
-export { Cadence }; 

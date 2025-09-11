@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Take5 Video Call</title>
+    <script src="https://media.twiliocdn.com/sdk/js/video/releases/2.25.0/twilio-video.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #000;
+            color: white;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            position: relative;
+        }
+        
+        .timer {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px 15px;
+            border-radius: 20px;
+            font-size: 18px;
+            font-weight: 600;
+            z-index: 100;
+        }
+        
+        .video-container {
+            flex: 1;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        #remoteVideo {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            background: #000;
+        }
+        
+        #localVideo {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 200px;
+            height: 150px;
+            border-radius: 10px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            object-fit: cover;
+            background: #000;
+        }
+        
+        .controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 15px;
+            z-index: 100;
+        }
+        
+        button {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: none;
+            padding: 15px 25px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 500;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+        }
+        
+        button:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+        }
+        
+        button:disabled {
+            background: rgba(255, 255, 255, 0.1);
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .join-button {
+            background: #007AFF;
+            font-size: 18px;
+            padding: 18px 35px;
+        }
+        
+        .join-button:hover {
+            background: #0056b3;
+        }
+        
+        .status {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            z-index: 50;
+        }
+        
+        .status.connecting {
+            color: #FFA500;
+        }
+        
+        .status.connected {
+            color: #00FF00;
+        }
+        
+        .status.error {
+            color: #FF4444;
+        }
+        
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="timer" id="timer">00:00</div>
+        
+        <div class="video-container">
+            <video id="remoteVideo" autoplay></video>
+            <video id="localVideo" autoplay muted></video>
+            
+            <div id="status" class="status connecting">
+                Ready to join call
+            </div>
+        </div>
+        
+        <div class="controls">
+            <button id="joinButton" class="join-button" onclick="joinCall()">Join Call</button>
+            <button id="leaveButton" onclick="leaveCall()" disabled class="hidden">Leave Call</button>
+        </div>
+    </div>
+
+    <script>
+        let room = null;
+        let localVideoTrack = null;
+        let localAudioTrack = null;
+        let timerInterval = null;
+        let callDuration = 5 * 60; // 5 minutes in seconds
+        let scheduledEndTime = null;
+        
+        // Get URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const roomSid = urlParams.get('roomSid');
+        const token = urlParams.get('token');
+        const scheduledTime = urlParams.get('scheduledTime');
+        
+        // Validate required parameters
+        if (!roomSid || !token || !scheduledTime) {
+            updateStatus('Missing required parameters. Please use a valid join URL.', 'error');
+            return;
+        }
+        
+        async function joinCall() {
+            try {
+                updateStatus('Connecting...', 'connecting');
+                
+                // Get user media
+                const mediaStream = await navigator.mediaDevices.getUserMedia({
+                    video: true,
+                    audio: true
+                });
+                
+                localVideoTrack = mediaStream.getVideoTracks()[0];
+                localAudioTrack = mediaStream.getAudioTracks()[0];
+                
+                // Attach local video
+                const localVideo = document.getElementById('localVideo');
+                localVideo.srcObject = mediaStream;
+                
+                // Connect to Twilio Video room
+                room = await Twilio.Video.connect(token, {
+                    name: roomSid,
+                    tracks: [localVideoTrack, localAudioTrack]
+                });
+                
+                updateStatus('', 'connected');
+                document.getElementById('joinButton').classList.add('hidden');
+                document.getElementById('leaveButton').classList.remove('hidden');
+                document.getElementById('leaveButton').disabled = false;
+                
+                // Start timer based on scheduled time
+                startScheduledTimer();
+                
+                // Handle remote participants
+                room.on('participantConnected', participantConnected);
+                room.on('participantDisconnected', participantDisconnected);
+                
+                // Handle room events
+                room.on('disconnected', roomDisconnected);
+                
+            } catch (error) {
+                console.error('Error joining call:', error);
+                updateStatus('Error: ' + error.message, 'error');
+            }
+        }
+        
+        function participantConnected(participant) {
+            console.log('Participant connected:', participant.identity);
+            
+            participant.tracks.forEach(publication => {
+                if (publication.isSubscribed) {
+                    const track = publication.track;
+                    attachTrack(track);
+                }
+            });
+            
+            participant.on('trackSubscribed', track => {
+                attachTrack(track);
+            });
+        }
+        
+        function participantDisconnected(participant) {
+            console.log('Participant disconnected:', participant.identity);
+        }
+        
+        function attachTrack(track) {
+            const remoteVideo = document.getElementById('remoteVideo');
+            remoteVideo.appendChild(track.attach());
+        }
+        
+        function roomDisconnected(room) {
+            console.log('Disconnected from room');
+            updateStatus('Call ended', 'error');
+            document.getElementById('joinButton').classList.remove('hidden');
+            document.getElementById('leaveButton').classList.add('hidden');
+            stopTimer();
+        }
+        
+        function leaveCall() {
+            if (room) {
+                room.disconnect();
+            }
+            if (localVideoTrack) {
+                localVideoTrack.stop();
+            }
+            if (localAudioTrack) {
+                localAudioTrack.stop();
+            }
+            stopTimer();
+        }
+        
+        function startScheduledTimer() {
+            // Calculate when the call should end based on scheduled time
+            const scheduledStartTime = new Date(scheduledTime).getTime();
+            scheduledEndTime = scheduledStartTime + (callDuration * 1000);
+            
+            // Start the timer immediately
+            timerInterval = setInterval(updateScheduledTimer, 1000);
+            updateScheduledTimer(); // Update immediately
+        }
+        
+        function stopTimer() {
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+            }
+        }
+        
+        function updateScheduledTimer() {
+            if (!scheduledEndTime) return;
+            
+            const now = Date.now();
+            const remaining = Math.max(0, Math.floor((scheduledEndTime - now) / 1000));
+            
+            const minutes = Math.floor(remaining / 60);
+            const seconds = remaining % 60;
+            
+            document.getElementById('timer').textContent = 
+                `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            
+            // Auto-end call when scheduled time is up
+            if (remaining === 0) {
+                endCallAndDeleteRoom();
+            }
+        }
+        
+        async function endCallAndDeleteRoom() {
+            // Disconnect all users
+            if (room) {
+                room.disconnect();
+            }
+            
+            // Delete the room on the server
+            try {
+                await fetch(`/api/twilio/call/${roomSid}`, {
+                    method: 'DELETE'
+                });
+            } catch (error) {
+                console.error('Error deleting room:', error);
+            }
+            
+            // Update UI
+            updateStatus('Call ended - time expired', 'error');
+            document.getElementById('joinButton').classList.remove('hidden');
+            document.getElementById('leaveButton').classList.add('hidden');
+            stopTimer();
+        }
+        
+        function updateStatus(message, type) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = 'status ' + type;
+            
+            // Hide status when connected
+            if (type === 'connected' && !message) {
+                statusDiv.style.display = 'none';
+            } else {
+                statusDiv.style.display = 'block';
+            }
+        }
+        
+        // Initialize
+        window.onload = function() {
+            updateStatus('Ready to join call', 'connecting');
+        };
+    </script>
+</body>
+</html>

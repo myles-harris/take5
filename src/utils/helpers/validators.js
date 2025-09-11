@@ -126,3 +126,48 @@ exports.validateCallId = validateCallId;
 exports.validateAddParticipant = validateAddParticipant;
 exports.validateRemoveParticipant = validateRemoveParticipant;
 exports.validateSendSMS = validateSendSMS;
+
+// Mobile validation schemas
+const registerPushTokenSchema = Joi.object({
+    userId: Joi.number().integer().positive().required(),
+    pushToken: Joi.string().min(1).max(200).required()
+});
+
+const joinCallSchema = Joi.object({
+    userId: Joi.number().integer().positive().required(),
+    roomSid: Joi.string().min(1).max(50).required(),
+    groupId: Joi.number().integer().positive().required()
+});
+
+// Validation functions
+const validateRegisterPushToken = (data) => registerPushTokenSchema.validate(data);
+const validateJoinCall = (data) => joinCallSchema.validate(data);
+
+module.exports = {
+    // Existing exports
+    createUserSchema,
+    updateUserSchema,
+    userIdSchema,
+    createGroupSchema,
+    updateGroupSchema,
+    groupIdSchema,
+    createCallSchema,
+    callIdSchema,
+    addParticipantSchema,
+    removeParticipantSchema,
+    sendSMSSchema,
+    validateCreateUser,
+    validateUpdateUser,
+    validateGetUser,
+    validateCreateGroup,
+    validateUpdateGroup,
+    validateGetGroup,
+    validateCreateCall,
+    validateCallId,
+    validateAddParticipant,
+    validateRemoveParticipant,
+    validateSendSMS,
+    // New mobile exports
+    validateRegisterPushToken,
+    validateJoinCall
+};
